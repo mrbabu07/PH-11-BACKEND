@@ -1,3 +1,4 @@
+const { MongoClient, ServerApiVersion } = require("mongodb");
 const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
@@ -8,7 +9,42 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const admin = require("firebase-admin");
+
+// const serviceAccount = require("./firebase-admin-key.json");
+
+const decoded = Buffer.from(process.env.FB_KEY, 'base64').toString('utf8')
+const serviceAccount = JSON.parse(decoded);
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount)
+});
+
+
+
+const verifyFBToken = async(req, res, next) => {
+  const token = req.headers.authorization;
+
+  if(!token){
+    return res.status(401).send({message: 'Unauthorized access'});
+  }
+  try{
+    const idToken = token.split(' ')[1];
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    console.log('Decoded Token:', decodedToken);
+    req.decodedEmail = decodedToken.email;
+    next();
+  }
+  catch(error){
+    return res.status(401).send({message: 'Unauthorized access'});
+  }
+}
+
+
+
+
+
+
 const uri =
   "mongodb+srv://ph-11:eVD4PIXIN9Idf8Gy@cluster0.g6xesjf.mongodb.net/?appName=Cluster0";
 
@@ -29,12 +65,13 @@ async function run() {
 
     const database = client.db("ph-11DB");
     const userCollection = database.collection("user");
-    const productCollection = database.collection('product');
+    const requestCollection = database.collection('request');
 
     app.post("/users", async (req, res) => {
       const userInfo = req.body;
       userInfo.createdAt = new Date();
-
+      userInfo.role = "donor";
+      userInfo.status = "active";
       const result = await userCollection.insertOne(userInfo);
       res.send(result);
     });
@@ -48,13 +85,20 @@ async function run() {
     });
 
 
-    //Product Collection
-    app.post('/products',async(req, res) => {
+    //Request Collection
+    app.post('/requests', verifyFBToken, async(req, res) => {
       const data = req.body;
       data.createdAt = new Date();
-      const result = await productCollection.insertOne(data);
+      const result = await requestCollection.insertOne(data);
       res.send(result);
     })
+
+    // app.get('manager/products', async(req, res)=>{
+    //   const email = req.params.email;
+    //   const query = {managerEmail: email};
+    //   const result = await productCollection.find(query).toArray();
+    //   res.send(result);
+    // })
 
     await client.db("admin").command({ ping: 1 });
     console.log(
