@@ -41,10 +41,6 @@ const verifyFBToken = async(req, res, next) => {
 }
 
 
-
-
-
-
 const uri =
   "mongodb+srv://ph-11:eVD4PIXIN9Idf8Gy@cluster0.g6xesjf.mongodb.net/?appName=Cluster0";
 
@@ -67,6 +63,7 @@ async function run() {
     const userCollection = database.collection("user");
     const requestCollection = database.collection('request');
 
+     //users info
     app.post("/users", async (req, res) => {
       const userInfo = req.body;
       userInfo.createdAt = new Date();
@@ -75,6 +72,11 @@ async function run() {
       const result = await userCollection.insertOne(userInfo);
       res.send(result);
     });
+
+    app.get('/users', verifyFBToken, async(req, res)=>{
+      const result = await userCollection.find().toArray();
+      res.status(200).send(result)
+    })
 
     app.get("/users/role/:email", async (req, res) => {
       const email = req.params.email;
