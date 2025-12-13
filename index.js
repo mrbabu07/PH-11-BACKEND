@@ -13,33 +13,29 @@ const admin = require("firebase-admin");
 
 // const serviceAccount = require("./firebase-admin-key.json");
 
-const decoded = Buffer.from(process.env.FB_KEY, 'base64').toString('utf8')
+const decoded = Buffer.from(process.env.FB_KEY, "base64").toString("utf8");
 const serviceAccount = JSON.parse(decoded);
 
 admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
+  credential: admin.credential.cert(serviceAccount),
 });
 
-
-
-const verifyFBToken = async(req, res, next) => {
+const verifyFBToken = async (req, res, next) => {
   const token = req.headers.authorization;
 
-  if(!token){
-    return res.status(401).send({message: 'Unauthorized access'});
+  if (!token) {
+    return res.status(401).send({ message: "Unauthorized access" });
   }
-  try{
-    const idToken = token.split(' ')[1];
+  try {
+    const idToken = token.split(" ")[1];
     const decodedToken = await admin.auth().verifyIdToken(idToken);
-    console.log('Decoded Token:', decodedToken);
+    console.log("Decoded Token:", decodedToken);
     req.decodedEmail = decodedToken.email;
     next();
+  } catch (error) {
+    return res.status(401).send({ message: "Unauthorized access" });
   }
-  catch(error){
-    return res.status(401).send({message: 'Unauthorized access'});
-  }
-}
-
+};
 
 const uri =
   "mongodb+srv://ph-11:eVD4PIXIN9Idf8Gy@cluster0.g6xesjf.mongodb.net/?appName=Cluster0";
@@ -61,9 +57,9 @@ async function run() {
 
     const database = client.db("ph-11DB");
     const userCollection = database.collection("user");
-    const requestCollection = database.collection('request');
+    const requestCollection = database.collection("request");
 
-     //users info
+    //users info
     app.post("/users", async (req, res) => {
       const userInfo = req.body;
       userInfo.createdAt = new Date();
@@ -73,10 +69,10 @@ async function run() {
       res.send(result);
     });
 
-    app.get('/users', verifyFBToken, async(req, res)=>{
+    app.get("/users", verifyFBToken, async (req, res) => {
       const result = await userCollection.find().toArray();
-      res.status(200).send(result)
-    })
+      res.status(200).send(result);
+    });
 
     app.get("/users/role/:email", async (req, res) => {
       const email = req.params.email;
@@ -86,37 +82,57 @@ async function run() {
       res.send(result);
     });
 
-    app.patch('/update/user/status', verifyFBToken, async(req, res)=>{
-      const {email, status} = req.query;
-      const query = {email:email};
+    app.patch("/update/user/status", verifyFBToken, async (req, res) => {
+      const { email, status } = req.query;
+      const query = { email: email };
 
       const updateStatus = {
         $set: {
-          status:status
-        }
-      }
-      const result = await userCollection.updateOne(query, updateStatus)
-      res.send(result)
-    })
-
-
-
-
+          status: status,
+        },
+      };
+      const result = await userCollection.updateOne(query, updateStatus);
+      res.send(result);
+    });
 
     //Request Collection
-    app.post('/requests', verifyFBToken, async(req, res) => {
+    app.post("/requests", verifyFBToken, async (req, res) => {
       const data = req.body;
       data.createdAt = new Date();
       const result = await requestCollection.insertOne(data);
       res.send(result);
-    })
+    });
 
-    // app.get('manager/products', async(req, res)=>{
-    //   const email = req.params.email;
-    //   const query = {managerEmail: email};
-    //   const result = await productCollection.find(query).toArray();
-    //   res.send(result);
-    // })
+    app.get("/my-request", verifyFBToken, async (req, res) => {
+      try {
+        const email = req.decodedEmail;
+
+        // Pagination params
+        const size = Number(req.query.size) || 5; 
+        const page = Number(req.query.page) || 0; 
+
+        const query = { requesterEmail: email };
+
+        const result = await requestCollection
+          .find(query)
+          .skip(size * page)
+          .limit(size)
+          .toArray();
+
+        const totalRequest = await requestCollection.countDocuments(query);
+
+        res.send({
+          request: result,
+          totalRequest,
+          page,
+          size,
+          totalPages: Math.ceil(totalRequest / size),
+        });
+      } catch (err) {
+        console.error(err);
+        res.status(500).send({ error: "Failed to fetch requests" });
+      }
+    });
 
     await client.db("admin").command({ ping: 1 });
     console.log(
