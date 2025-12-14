@@ -3,6 +3,8 @@ const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
 const port = process.env.PORT || 3000;
+const stripe = require("stripe")(process.env.STRIPE_KEY);
+const crypto = require("crypto");
 
 const app = express();
 
@@ -58,7 +60,7 @@ async function run() {
     const database = client.db("ph-11DB");
     const userCollection = database.collection("user");
     const requestCollection = database.collection("request");
-
+    const fundingCollection = database.collection("funding");
     //users info
     app.post("/users", async (req, res) => {
       const userInfo = req.body;
@@ -108,8 +110,8 @@ async function run() {
         const email = req.decodedEmail;
 
         // Pagination params
-        const size = Number(req.query.size) || 5; 
-        const page = Number(req.query.page) || 0; 
+        const size = Number(req.query.size) || 10;
+        const page = Number(req.query.page) || 0;
 
         const query = { requesterEmail: email };
 
@@ -132,6 +134,58 @@ async function run() {
         console.error(err);
         res.status(500).send({ error: "Failed to fetch requests" });
       }
+    });
+
+    //funding collection
+    app.post("/create-payment-checkout", async (req, res) => {
+      const information = req.body;
+      const amount = parseInt(information.donateAmount) * 100;
+
+      const session = await stripe.checkout.sessions.create({
+        line_items: [
+          {
+            price_data: {
+              currency: "bdt",
+              unit_amount: amount,
+              product_data: {
+                name: "please support us",
+              },
+            },
+
+            quantity: 1,
+          },
+        ],
+        mode: "payment",
+        metadata: {
+          donorName: information?.donorName,
+        },
+        customer_email: information?.donorEmail,
+        success_url: `${process.env.SITE_DOMAIN}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${process.env.SITE_DOMAIN}/payment-failed`,
+      });
+
+      res.send({ url: session.url });
+    });
+
+    //donation request
+
+    app.get("/donation-requests", async (req, res) => {
+      const status = req.query.status;
+
+      const query = status ? { donation_status: status } : {};
+
+      const result = await requestCollection.find(query).toArray();
+      res.send(result);
+    });
+
+    app.get("/donation-request/:id", verifyFBToken, async (req, res) => {
+      const id = req.params.id;
+
+      const result = await requestCollection.findOne({
+        _id: new ObjectId(id),
+      });
+
+      res.send(result);
     });
 
     await client.db("admin").command({ ping: 1 });
