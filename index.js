@@ -213,6 +213,43 @@ async function run() {
       }
     });
 
+    // Update donation status to "inprogress" when user confirms
+    app.patch(
+      "/donation-request/:id/donate",
+      verifyFBToken,
+      async (req, res) => {
+        const { id } = req.params;
+        const { donation_status, donorName, donorEmail } = req.body;
+
+        if (donation_status !== "inprogress") {
+          return res.status(400).send({ error: "Invalid status" });
+        }
+
+        try {
+          const result = await requestCollection.updateOne(
+            { _id: new ObjectId(id) },
+            {
+              $set: {
+                donation_status: "inprogress",
+                donorName,
+                donorEmail,
+                updatedAt: new Date(),
+              },
+            }
+          );
+
+          if (result.matchedCount === 0) {
+            return res.status(404).send({ error: "Request not found" });
+          }
+
+          res.send({ success: true, message: "Donation confirmed" });
+        } catch (error) {
+          console.error("Donation update error:", error);
+          res.status(500).send({ error: "Failed to update donation" });
+        }
+      }
+    );
+
     app.get("/donation-request/:id", verifyFBToken, async (req, res) => {
       const id = req.params.id;
 
