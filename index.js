@@ -85,23 +85,46 @@ async function run() {
       res.send(result);
     });
 
+    // Update profile (excluding email)
+    app.patch("/users/profile", verifyFBToken, async (req, res) => {
+      const email = req.decodedEmail;
+      const { name, bloodGroup, district, upazila, photoURL } = req.body;
+
+      const result = await userCollection.updateOne(
+        { email },
+        {
+          $set: {
+            name,
+            bloodGroup,
+            district,
+            upazila,
+            photoURL,
+            updatedAt: new Date(),
+          },
+        }
+      );
+
+      if (result.matchedCount === 0) {
+        return res.status(404).send({ error: "User not found" });
+      }
+
+      res.send({ success: true });
+    });
+
     // PATCH route: admin can change any user's role
     app.patch("/users/role", verifyFBToken, async (req, res) => {
-      const adminEmail = req.decodedEmail; 
-       const { email, newRole } = req.body;
+      const adminEmail = req.decodedEmail;
+      const { email, newRole } = req.body;
 
-      
       const adminUser = await userCollection.findOne({ email: adminEmail });
       if (adminUser?.role !== "admin") {
         return res.status(403).send({ error: "Only admins can change roles" });
       }
 
-      
       if (!["donor", "volunteer", "admin"].includes(newRole)) {
         return res.status(400).send({ error: "Invalid role" });
       }
 
-      
       const result = await userCollection.updateOne(
         { email: email },
         { $set: { role: newRole } }
