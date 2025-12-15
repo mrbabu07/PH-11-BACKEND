@@ -77,6 +77,7 @@ async function run() {
       res.status(200).send(result);
     });
 
+    
     app.get("/users/role/:email", async (req, res) => {
       const email = req.params.email;
       const query = { email: email };
@@ -244,7 +245,7 @@ async function run() {
 
     //donation request
 
-    // GET /donation-requests?blood_group=A+&district=Dhaka&upazila=Dhanmondi&status=pending
+    // with filters - public route
     app.get("/donation-requests", async (req, res) => {
       try {
         const { status, blood_group, district, upazila } = req.query;
@@ -263,6 +264,24 @@ async function run() {
         console.error(err);
         res.status(500).send({ message: "Failed to fetch donation requests" });
       }
+    });
+
+    // 3. Total donation requests count
+    app.get("/donation-request", async (req, res) => {
+      if (req.query.field === "count") {
+        const count = await requestCollection.countDocuments();
+        return res.json({ count });
+      }
+      // ... rest of your search logic
+    });
+
+
+    // 2. Total funding summary
+    app.get("/funding/summary", verifyFBToken, async (req, res) => {
+      const total = await paymentCollection
+        .aggregate([{ $group: { _id: null, total: { $sum: "$amount" } } }])
+        .toArray();
+      res.json({ total: total[0]?.total || 0 });
     });
 
     // Update donation status to "inprogress" when user confirms
@@ -347,6 +366,8 @@ async function run() {
 
       res.send(result);
     });
+
+    
 
     // Public route for blood request search — NO AUTHENTICATION
 
