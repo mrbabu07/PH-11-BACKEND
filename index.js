@@ -77,7 +77,6 @@ async function run() {
       res.status(200).send(result);
     });
 
-    
     app.get("/users/role/:email", async (req, res) => {
       const email = req.params.email;
       const query = { email: email };
@@ -190,6 +189,58 @@ async function run() {
       }
     });
 
+    
+
+    app.put("/requests/:id", verifyFBToken, async (req, res) => {
+      const { id } = req.params;
+      const email = req.decodedEmail;
+      const updateData = req.body;
+
+      //  Prevent editing of protected fields
+      const protectedFields = [
+        "requesterEmail",
+        "donation_status",
+        "donorName",
+        "donorEmail",
+        "createdAt",
+        "_id",
+      ];
+
+      protectedFields.forEach((field) => delete updateData[field]);
+
+      try {
+        const result = await requestCollection.updateOne(
+          { _id: new ObjectId(id), requesterEmail: email },
+          { $set: { ...updateData, updatedAt: new Date() } }
+        );
+
+        if (result.matchedCount === 0) {
+          return res
+            .status(403)
+            .send({ error: "You can only edit your own requests" });
+        }
+
+        res.send({ success: true, message: "Request updated successfully" });
+      } catch (error) {
+        console.error("Edit request error:", error);
+        res.status(500).send({ error: "Failed to update request" });
+      }
+    });
+
+    app.delete("/requests/:id", verifyFBToken, async (req, res) => {
+      const { id } = req.params;
+      const email = req.decodedEmail;
+      const result = await requestCollection.deleteOne({
+        _id: new ObjectId(id),
+        requesterEmail: email,
+      });
+      if (result.deletedCount === 0) {
+        return res.status(403).send({ error: "Not your request or not found" });
+      }
+      res.send({ success: true });
+    });
+
+    
     //funding collection
     app.post("/create-payment-checkout", async (req, res) => {
       const information = req.body;
@@ -243,26 +294,84 @@ async function run() {
       }
     });
 
-    //donation request
+   
+    //Get payment records with pagination
+    app.get("/payment-records", verifyFBToken, async (req, res) => {
+      const page = parseInt(req.query.page) || 1;
+      const size = parseInt(req.query.size) || 8; // 8 items per page
 
-    // with filters - public route
+      const total = await paymentCollection.countDocuments();
+      const donations = await paymentCollection
+        .find()
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * size)
+        .limit(size)
+        .toArray();
+
+      res.json({
+        donations,
+        total,
+        page,
+        size,
+        totalPages: Math.ceil(total / size),
+      });
+    });
+
+   
+
+    //donation request with filters - public route
     app.get("/donation-requests", async (req, res) => {
       try {
-        const { status, blood_group, district, upazila } = req.query;
+        const {
+          status,
+          blood_group,
+          district,
+          upazila,
+          page,
+          size = 8, 
+        } = req.query;
 
         const query = {};
-
         if (status) query.donation_status = status;
         if (blood_group) query.blood_group = blood_group;
         if (district) query.district = district;
         if (upazila) query.upazila = upazila;
 
-        const result = await requestCollection.find(query).toArray();
+        if (req.query.field === "count") {
+          const count = await requestCollection.countDocuments(); // ✅ blood donation requests
+          return res.json({ count });
+        }
 
-        res.send(result);
+        if (!page) {
+          const requests = await requestCollection
+            .find(query)
+            .sort({ createdAt: -1 })
+            .toArray();
+
+          return res.send(requests);
+        }
+
+        const pageNum = parseInt(page);
+        const sizeNum = parseInt(size);
+
+        const total = await requestCollection.countDocuments(query);
+        const requests = await requestCollection
+          .find(query)
+          .sort({ createdAt: -1 })
+          .skip((pageNum - 1) * sizeNum)
+          .limit(sizeNum)
+          .toArray();
+
+        res.send({
+          requests,
+          total,
+          page: pageNum,
+          size: sizeNum,
+          totalPages: Math.ceil(total / sizeNum),
+        });
       } catch (err) {
-        console.error(err);
-        res.status(500).send({ message: "Failed to fetch donation requests" });
+        console.error("Donation requests error:", err);
+        res.status(500).send({ error: "Failed to fetch requests" });
       }
     });
 
@@ -272,9 +381,7 @@ async function run() {
         const count = await requestCollection.countDocuments();
         return res.json({ count });
       }
-      // ... rest of your search logic
     });
-
 
     // 2. Total funding summary
     app.get("/funding/summary", verifyFBToken, async (req, res) => {
@@ -366,8 +473,6 @@ async function run() {
 
       res.send(result);
     });
-
-    
 
     // Public route for blood request search — NO AUTHENTICATION
 
